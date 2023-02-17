@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bitstamp Live Ticker</title>
+  <style>
+    :root {
+      --main: #203b51;
+      --sub: #f8cf1a;
+      --white: #fff;
+      --gray: #e6e6e6;
+    }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      height: 100%;
+      font-size: 16px;
+      line-height: 24px;
+      position: relative;
+    }
+
+    /* Share */
+    .flex {
+      display: flex;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 15px;
+    }
+    .col {
+      flex: 1;
+      padding: 15px;
+    }
+
+    /* Layout */
+    #layout {
+      height: 100vh;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 0;
+    }
+
+    /* Header */
+    #header {
+      background-color: var(--main);
+      padding: 15px 30px;
+    }
+    #logo {
+      color: var(--sub);
+      font-size: 1.6rem;
+      font-weight: bold;
+    }
+
+    /* Content */
+    #content {
+      flex: 1;
+      overflow: hidden;
+    }
+    #content p {
+      white-space: pre-wrap;
+      margin-bottom: 15px;
+      color: var(--main);
+    }
+    #content.flex {
+      gap: 0;
+      align-items: stretch;
+      flex-wrap: nowrap;
+    }
+    #content .col:nth-child(1) {
+      background-color: var(--gray);
+      max-width: 20%;
+    }
+    #content .col:nth-child(2) {
+      max-width: 80%;
+    }
+    #selection {
+      margin-bottom: 15px;
+      gap: 5px;
+    }
+
+    /* Ticker Checkbox */
+    .ticker-checkbox {
+      display: block;
+      border: 1px solid var(--main);
+      border-radius: 10px;
+      padding: 5px 10px;
+      transition: 0.3s;
+      cursor: pointer;
+      flex-grow: 1;
+      text-align: center;
+    }
+    .ticker-checkbox input {
+      display: none;
+    }
+    .ticker-checkbox.selected {
+      background-color: var(--main);
+      color: var(--sub);
+    }
+    .ticker-checkbox:hover {
+      background-color: var(--main);
+      color: var(--sub);
+    }
+
+    /* Button */
+    #content .button {
+      width: 100%;
+      cursor: pointer;
+      border: none;
+      background-color: var(--main);
+      color: var(--sub);
+      outline: none;
+      border-radius: 10px;
+      padding: 15px;
+      transition: 0.3s;
+      font-size: 1.6rem;
+    }
+    .button:hover {
+      filter: brightness(90%);
+    }
+
+    /* Streaming */
+    #streaming {
+      overflow-y: scroll;
+      word-break: break-all;
+      height: 100%;
+    }
+    #streaming .message {
+      border: 1px solid var(--gray);
+      border-radius: 10px;
+      padding: 10px;
+      margin-bottom: 5px;
+      background-color: var(--main);
+      color: var(--white);
+    }
+    #streaming .message p {
+      margin: 0;
+      color: var(--sub);
+    }
+    #streaming table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    #streaming table th {
+      white-space: nowrap;
+      text-align: center;
+    }
+    #streaming table td {
+      border: 1px solid var(--white);
+      padding: 4px;
+      text-align: right;
+    }
+    #streaming table td.price {
+      color: var(--sub);
+    }
+  </style>
+</head>
+<body>
+
+  <div id="layout" class="flex">
+    <!-- Header -->
+    <nav id="header" class="flex">
+      <div id="logo">Bitstamp Live Ticker</div>
+    </nav>
+    
+    <!-- Content -->
+    <section id="content" class="flex">
+      <!-- Left -->
+      <div class="col">
+        <p>Select Ticker to subscribe / unsubscribe live prices</p>
+        <div id="selection" class="flex"></div>
+        <button class="button" onclick="subscribeTickers()">Subscribe</button>
+      </div>
+      <!-- Right -->
+      <div class="col">
+        <div id="streaming"></div>
+      </div>
+    </section>
+  </div>
+
+</body>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js" crossorigin="anonymous"></script>
+<script>
+  // Variables
+  const CURRENCYS = {};
+  const SUBSCRIBING_TICKERS = [];
+  const selectionEl = document.getElementById('selection');
+  const streamingEl = document.getElementById('streaming');
+
+  // Socket
+  const socket = io('/', {
+    path: '/streaming/'
+  });
+  socket.on('connect', () => {
+    console.log('Connected to socket server!');
+    makeMessage({ message: 'Socket server connected' });
+
+    socket.on('currency_pairs', currencys => {
+      Object.keys(currencys).forEach(ccy => {
+        if ( !CURRENCYS[ccy] ) {
+          CURRENCYS[ccy] = {
+            ccy: ccy,
+            ticker: currencys[ccy],
+            subscribe: false
+          };
+        }
+        const findLabelEl = selectionEl.querySelector(`label[for=${ccy}]`);
+        if ( !findLabelEl ) {
+          const label = document.createElement('label');
+          label.classList.add('ticker-checkbox');
+          label.setAttribute('for', ccy);
+          label.onclick = toggleLabelSelected;
+          label.innerHTML = `
+            <input id="${ccy}" name="${ccy}" type="checkbox" value="${CURRENCYS[ccy].ticker}">
+            ${ccy}
+          `;
+          selectionEl.append(label);
+        } else {
+          findLabelEl.classList.remove('selected');
+        }
+      })
+      console.log(CURRENCYS);
+    })
+
+    socket.on('streaming-message', message => makeMessage(message));
+    socket.on('disconnect', () => makeMessage({ message: 'Socket server disconnected' }));
+  });
+  
+  // Functions
+  const subscribeTickers = () => {
+    const ccys = Object.values(CURRENCYS);
+    const userSubscribeList = {
+      subscribeLists: [],
+      unsubscribeLists: [],
+    }
+    ccys.forEach(ccy => {
+      const findTickerIndex = SUBSCRIBING_TICKERS.indexOf(ccy.ticker);
+      if ( ccy.subscribe ) {
+        if ( findTickerIndex === -1 ) {
+          SUBSCRIBING_TICKERS.push(ccy.ticker);
+          userSubscribeList.subscribeLists.push(ccy.ticker);
+          makeMessage({ message: `Subscribe: ${ccy.ticker}` });
+        }
+      } else {
+        if ( findTickerIndex !== -1 ) {
+          SUBSCRIBING_TICKERS.splice(findTickerIndex, 1);
+          userSubscribeList.unsubscribeLists.push(ccy.ticker);
+          makeMessage({ message: `Unsubscribe: ${ccy.ticker}` });
+        }
+      }
+    })
+    socket.emit('subscribe', userSubscribeList);
+    console.log({userSubscribeList})
+  }
+
+  const toggleLabelSelected = ($event) => {
+    const ccy = $event.target.getAttribute('for');
+    if ( ccy ) {
+      CURRENCYS[ccy].subscribe = !CURRENCYS[ccy].subscribe;
+      CURRENCYS[ccy].subscribe ? $event.target.className = 'ticker-checkbox selected' : $event.target.className = 'ticker-checkbox';
+    }
+  }
+
+  const makeMessage = (msg) => {
+    const div = document.createElement('div');
+    const p = document.createElement('p');
+    div.className = 'message';
+    if ( msg.message ) {
+      p.innerText += `${msg.message}`;
+    }
+    if ( msg.channel ) {
+      p.innerText += `: ${msg.channel}`;
+    }
+    div.insertAdjacentElement('afterbegin', p);
+    if ( msg.trade ) {
+      const tradeInfo = msg.trade;
+      const table = document.createElement('table');
+      // table.innerHTML = `
+      //   <tr>
+      //     <th>ID</th>
+      //     <th>timestamp</th>
+      //     <th>amount</th>
+      //     <th>microtimestamp</th>
+      //     <th>price</th>
+      //     <th>type</th>
+      //     <th>buy_order_id</th>
+      //     <th>sell_order_id</th>
+      //   </tr>
+      //   <tr>
+      //     <td>${tradeInfo.id}</td>
+      //     <td>${tradeInfo.timestamp}</td>
+      //     <td>${tradeInfo.amount}</td>
+      //     <td>${tradeInfo.microtimestamp}</td>
+      //     <td class="price">${tradeInfo.price}</td>
+      //     <td>${tradeInfo.type}</td>
+      //     <td>${tradeInfo.buy_order_id}</td>
+      //     <td>${tradeInfo.sell_order_id}</td>
+      //   </tr>
+      // `;
+      table.innerHTML = `
+        <tr>
+          <th>Ticker</th>
+          <th>Time</th>
+          <th>type</th>
+          <th>Amount</th>
+          <th>price</th>
+        </tr>
+        <tr>
+          <td>${msg.channel}</td>
+          <td>${tradeInfo.timestamp}</td>
+          <td>${tradeInfo.type}</td>
+          <td>${tradeInfo.amount}</td>
+          <td class="price">${tradeInfo.price}</td>
+        </tr>
+      `;
+      div.insertAdjacentElement('beforeend', table);
+    }
+    streamingEl.append(div);
+    streamingEl.scrollTop = streaming.scrollHeight;
+  }
+</script>
+</html>
